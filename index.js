@@ -4,6 +4,8 @@ const cors = require('cors');
 const admin = require('firebase-admin');
 const verifyAPIKey = require('./middlewares/verifyAPIKey');
 const multer = require('multer');
+const fs = require('fs');
+const path = require('path');
 
 const storage = multer.diskStorage({
     destination: (req, res, cb) => {
@@ -126,6 +128,44 @@ app.get('/api/getAllData', async (req, res) => {
         });
     });
     res.status(200).json(documents);
+});
+
+app.delete('/api/delete-file', async (req, res) => {
+  const { filename } = req.body;
+  if (!filename) return res.status(400).json({ success: false, message: 'กรุณาส่งชื่อไฟล์' });
+
+  const filepath = path.join(__dirname, 'uploads', filename);
+
+  // ตรวจสอบไฟล์มีอยู่
+  fs.access(filepath, fs.constants.F_OK, async (err) => {
+    if (err) {
+      return res.status(404).json({ success: false, message: 'ไฟล์ไม่พบ' });
+    }
+
+    fs.unlink(filepath, async (err) => {
+      if (err) {
+        console.error(err);
+        return res.status(500).json({ success: false, message: 'ลบไฟล์ไม่สำเร็จ' });
+      }
+
+      try {
+        // ลบเอกสารใน Firestore ที่มี filename นี้
+        const snapshot = await db.collection('messages').where('filename', '==', filename).get();
+        const batch = db.batch();
+
+        snapshot.forEach(doc => {
+          batch.delete(doc.ref);
+        });
+
+        await batch.commit();
+
+        res.json({ success: true, message: 'ลบไฟล์และข้อมูลใน Firestore เรียบร้อย' });
+      } catch (firebaseErr) {
+        console.error(firebaseErr);
+        res.status(500).json({ success: false, message: 'ลบไฟล์สำเร็จ แต่ลบข้อมูล Firestore ไม่สำเร็จ' });
+      }
+    });
+  });
 });
 
 app.listen(PORT, () => {
