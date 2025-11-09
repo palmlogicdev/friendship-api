@@ -2,7 +2,6 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const admin = require('firebase-admin');
-const serviceAccount = require('./keys/firebaseConfig.json');
 const verifyAPIKey = require('./middlewares/verifyAPIKey');
 const multer = require('multer');
 
@@ -19,6 +18,20 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage })
 
+const serviceAccount = {
+  type: process.env.TYPE,
+  project_id: process.env.PROJECT_ID,
+  private_key_id: process.env.PRIVATE_KEY_ID,
+  private_key: process.env.PRIVATE_KEY.replace(/\\n/g, '\n'), // แปลง \n กลับเป็น newline จริง
+  client_email: process.env.CLIENT_EMAIL,
+  client_id: process.env.CLIENT_ID,
+  auth_uri: process.env.AUTH_URI,
+  token_uri: process.env.TOKEN_URI,
+  auth_provider_x509_cert_url: process.env.AUTH_PROVIDER_X509_CERT_URL,
+  client_x509_cert_url: process.env.CLIENT_X509_CERT_URL,
+  universe_domain: process.env.UNIVERSE_DOMAIN
+};
+
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
 });
@@ -33,11 +46,13 @@ app.use(cors({
     methods: ['GET','POST','PUT','DELETE'],
     allowedHeaders: ['Content-Type', 'x-api-key']
 }));
+app.use('/api/uploads', express.static('uploads'));
 
 // insert data to firebase 
 app.post('/api/createData', verifyAPIKey, async (req, res) => {
     const { name, message, filename } = req.body;
-    let value = {name, message, filename};
+    const date = new Date();
+    let value = {name, message, filename, date};
 
     try {
         const docRef = await db.collection('messages').add(value);
@@ -48,7 +63,8 @@ app.post('/api/createData', verifyAPIKey, async (req, res) => {
             recived: {
                 name,
                 message, 
-                filename
+                filename,
+                date
             },
             messageStatus: {
                 thai: 'ข้อความของคุณถึงเพิ่มแล้ว!',
@@ -99,7 +115,9 @@ app.post('/api/upload', verifyAPIKey, upload.single('image'), (req, res) => {
 });
 
 app.get('/api/getAllData', async (req, res) => {
-    const snapshot = await db.collection('messages').get();
+    const snapshot = await db.collection('messages')
+                                 .orderBy('date', 'desc')
+                                 .get();
     const documents = [];
     snapshot.forEach(doc => {
         documents.push({
@@ -107,7 +125,7 @@ app.get('/api/getAllData', async (req, res) => {
             ...doc.data()
         });
     });
-    res.status(200).json({documents});
+    res.status(200).json(documents);
 });
 
 app.listen(PORT, () => {
