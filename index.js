@@ -116,7 +116,7 @@ app.post('/api/upload', verifyAPIKey, upload.single('image'), (req, res) => {
     });
 });
 
-app.get('/api/getAllData', async (req, res) => {
+app.get('/api/getAllData', verifyAPIKey, async (req, res) => {
     const snapshot = await db.collection('messages')
                                  .orderBy('date', 'desc')
                                  .get();
@@ -130,42 +130,160 @@ app.get('/api/getAllData', async (req, res) => {
     res.status(200).json(documents);
 });
 
-app.delete('/api/delete-file', async (req, res) => {
-  const { filename } = req.body;
-  if (!filename) return res.status(400).json({ success: false, message: 'กรุณาส่งชื่อไฟล์' });
+app.delete('/api/delete-file', verifyAPIKey, async (req, res) => {
+    console.log('delete-file');
+    const directoryPath = './uploads';
+    const { filename } = req.body;
+    console.log(filename);
 
-  const filepath = path.join(__dirname, 'uploads', filename);
+    const filePath = `${directoryPath}/${filename}`;
+    console.log(filePath);
+    fs.existsSync(`${filePath}`)
+    res.status(200).json({
+        success: true,
+        message: `${filename} has been delete`
+    });
+    // if () {
+    //     if (fs.unlinkSync(filePath)) {
 
-  // ตรวจสอบไฟล์มีอยู่
-  fs.access(filepath, fs.constants.F_OK, async (err) => {
-    if (err) {
-      return res.status(404).json({ success: false, message: 'ไฟล์ไม่พบ' });
-    }
+    //     } else {
+    //         res.status(200).json({
+    //             success: false,
+    //             message: `${filename} can not delete`
+    //         });
+    //     }
+    // }
+}); 
 
-    fs.unlink(filepath, async (err) => {
-      if (err) {
-        console.error(err);
-        return res.status(500).json({ success: false, message: 'ลบไฟล์ไม่สำเร็จ' });
-      }
+app.delete('/api/delete-data', verifyAPIKey, async (req, res) => {
+    const { id } = req.body;
+    console.log(id);
 
-      try {
-        // ลบเอกสารใน Firestore ที่มี filename นี้
-        const snapshot = await db.collection('messages').where('filename', '==', filename).get();
-        const batch = db.batch();
+    try {
+        if (id) {
+            console.log('find id');
+            const firebaseRes = await db.collection('messages').doc(id).delete();
+            res.status(200).json({
+                success: true,
+                message: firebaseRes
+            });
+        }
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Cant find document'
+        });
+    };
+});
 
-        snapshot.forEach(doc => {
-          batch.delete(doc.ref);
+app.delete('/api/delete', verifyAPIKey, async (req, res) => {
+    const {id} = req.body;
+
+
+    const docRef = db.collection('messages').doc(id);
+    const snapshot = await docRef.get();
+    
+    if (!snapshot.exists) {
+      return res.status(404).json({ success: false, message: 'Document not found' });
+    } 
+
+    const data = snapshot.data();
+    if (data.filename) {
+        console.log(data.filename);
+        const apiRes = await fetch(`http://localhost:${PORT}/api/delete-file`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': process.env.API_KEY
+            }, 
+            body: JSON.stringify({
+                filename: data.filename
+            })
         });
 
-        await batch.commit();
+        if (apiRes.ok) {
+            const apiData = await apiRes.json();
+            if (apiData.success) {
+                const apiRes = await fetch(`http://localhost:${PORT}/api/delete-data`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-api-key': process.env.API_KEY
+                    }, 
+                    body: JSON.stringify({
+                        id: id
+                    })
+                });
 
-        res.json({ success: true, message: 'ลบไฟล์และข้อมูลใน Firestore เรียบร้อย' });
-      } catch (firebaseErr) {
-        console.error(firebaseErr);
-        res.status(500).json({ success: false, message: 'ลบไฟล์สำเร็จ แต่ลบข้อมูล Firestore ไม่สำเร็จ' });
-      }
-    });
-  });
+                if (apiRes.ok) {
+                    const apiData = await apiRes.json();
+
+                    if (apiData.success) {
+                        res.status(200).json({
+                            success: true,
+                            message: 'delete data successfully'
+                        });
+                    } else {
+                        console.log('here!');
+                        res.status(400).json({
+                            success: false,
+                            message: 'can not delete data'
+                        });
+                    }
+                } else {
+                    res.status(500).json({
+                        success: false,
+                        message: 'Server issue please check your internet'
+                    });
+                }
+            } else {
+                res.status(400).json({
+                    success: false,
+                    message: 'Can not delete file'
+                });
+            }
+        } else {
+            res.status(500).json({
+                success: false,
+                message: 'Server issue please check your internet'
+            });
+        }
+        
+    } else {
+        console.log('No filename');
+        console.log(id);
+        const apiRes = await fetch(`http://localhost:${PORT}/api/delete-data`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': process.env.API_KEY
+            }, 
+            body: JSON.stringify({
+                id: id
+            })
+        });
+
+        if (apiRes.ok) {
+            const apiData = await apiRes.json();
+            console.log(apiData);
+            if (apiData.success) {
+                res.status(200).json({
+                    success: true,
+                    message: 'delete data successfully'
+                });
+            } else {
+                res.status(400).json({
+                    success: false,
+                    message: 'can not delete data'
+                });
+            }
+        } else {
+            res.status(500).json({
+                success: false,
+                message: 'Server issue please check your internet'
+            });
+        }
+    }
 });
 
 app.listen(PORT, () => {
