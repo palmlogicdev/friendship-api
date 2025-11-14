@@ -11,6 +11,11 @@ const MyAPI = require('./classes/api.js');
 const { debugPort } = require('process');
 const myAPI = new MyAPI();
 
+const uploadDir = './uploads';
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive : true });
+}
+
 const storage = multer.diskStorage({
     destination: (req, res, cb) => {
         cb(null, 'uploads');
