@@ -13,6 +13,7 @@ const myAPI = new MyAPI();
 
 const uploadDir = './uploads';
 if (!fs.existsSync(uploadDir)) {
+    console.log('create', uploadDir);
     fs.mkdirSync(uploadDir, { recursive : true });
 }
 
